@@ -67,3 +67,14 @@ def price_chart(card_name: str, year: Optional[int] = None, card_set: Optional[s
     if image_bytes is None:
          raise HTTPException(status_code=404, detail="No date data available to generate chart.")
     return Response(content=image_bytes, media_type="image/png")
+
+@app.get("/metrics")
+def metrics():
+    """Basic runtime metrics for debugging eBay usage."""
+    from app.services import ebay
+    return {
+        "ebay_api_calls": ebay.api_call_count,
+        "cache_hits": ebay.cache_hits,
+        "cache_misses": ebay.cache_misses,
+        "last_rate_limit_headers": ebay.last_rate_limit_headers,
+    }
