@@ -2,15 +2,19 @@
 import os
 import requests
 from dotenv import load_dotenv
+from cachetools import TTLCache
 
 load_dotenv()
 
 EBAY_APP_ID = os.getenv("EBAY_APP_ID")
 
+# Cache up to 256 searches, each cached for 15 minutes
+_cache = TTLCache(maxsize=256, ttl=900)
+
 # Search ebay for sold listings of a given card name. Get metadata including sold price and dates.
 
 
-def fetch_sold_listings(card_name, year=None, card_set=None, language="English", limit=25):
+def fetch_sold_listings(card_name, year=None, card_set=None, language=None, limit=25):
     # Build keywords by combining all provided search terms
     keywords = [card_name]
     if year:
@@ -19,6 +23,14 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language="English",
         keywords.append(card_set)
     if language:
         keywords.append(language)
+
+    # Build a cache key from the search parameters
+    cache_key = " ".join(keywords).lower()
+
+    # Return cached results if available (slice to requested limit)
+    if cache_key in _cache:
+        cached = _cache[cache_key]
+        return cached[:limit]
 
     url = "https://svcs.ebay.com/services/search/FindingService/v1"
     headers = {"X-EBAY-SOA-OPERATION-NAME": "findCompletedItems"}
@@ -33,9 +45,13 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language="English",
         "paginationInput.entriesPerPage": "100"
     }
 
-    response = requests.get(url, params=params)
-    response.raise_for_status()
-    data = response.json()
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"eBay API request failed: {e}")
+        return []
     
     soldlistings = []
     
@@ -44,8 +60,6 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language="English",
         search_result = data.get('findCompletedItemsResponse', [{}])[0].get('searchResult', [{}])[0]
         items = search_result.get('item', [])
         for item in items:
-            if len(soldlistings) >= limit:
-                break
             selling_status = item.get('sellingStatus', [{}])[0]
             # Skip Best Offer listings — the actual sold price is unknown
             selling_state = selling_status.get('sellingState', [None])[0]
@@ -60,8 +74,11 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language="English",
                 })
     except (IndexError, ValueError, KeyError):
         pass 
-        
-    return soldlistings
+
+    # Cache all results (up to 100 from eBay) so different limit values reuse the same cache entry
+    _cache[cache_key] = soldlistings
+
+    return soldlistings[:limit]
 
 
 # uvicorn app.main:app --reload
