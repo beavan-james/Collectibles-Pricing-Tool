@@ -133,7 +133,8 @@ PokemonCompCalculator/
 ## Tech Stack
 
 - **[FastAPI](https://fastapi.tiangolo.com/)** — API framework
-- **[eBay Finding API](https://developer.ebay.com/devzone/finding/Concepts/MakingACall.html)** — sold listing data
+- ~~**[eBay Finding API](https://developer.ebay.com/devzone/finding/Concepts/MakingACall.html)** — sold listing data~~ (Decommissioned in 2025)
+- **[eBay Product Summary Search API](https://developer.ebay.com/api-docs/buy/catalog/resources/product_summary/methods/search)** — product details (e.g. language)
 - **[Matplotlib](https://matplotlib.org/)** — chart generation
 - **[NumPy](https://numpy.org/)** — trend line calculation
 - **[python-dotenv](https://github.com/theskumar/python-dotenv)** — environment variable management
