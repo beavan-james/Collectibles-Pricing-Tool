@@ -37,7 +37,7 @@ def _get_app_token():
     }
     data = {
         "grant_type": "client_credentials",
-        "scope": "https://api.ebay.com/oauth/api_scope/buy.item",
+        "scope": "https://api.ebay.com/oauth/api_scope",
     }
     resp = requests.post(url, headers=headers, data=data)
     resp.raise_for_status()
@@ -69,7 +69,7 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language=None, limi
     token = _get_app_token()
     url = "https://api.ebay.com/buy/browse/v1/item_summary/search"
 
-    filter_str = f"itemLocationCountryCode:AE,AT,AU,BE,BG,CA,CH,CL,CZ,DE,DK,ES,FI,FR,GB,GR,HK,HU,ID,IE,IL,IN,IT,JP,KR,LI,LU,MY,MX,NL,NZ,PH,PL,PT,RU,SE,SG,TH,TW,US,VN,ZA&sort=endingSoonest&limit={limit}"
+    filter_str = f"itemLocationCountryCode:[AE,AT,AU,BE,BG,CA,CH,CL,CZ,DE,DK,ES,FI,FR,GB,GR,HK,HU,ID,IE,IL,IN,IT,JP,KR,LI,LU,MY,MX,NL,NZ,PH,PL,PT,RU,SE,SG,TH,TW,US,VN,ZA],sort:endingSoonest"
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -91,10 +91,9 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language=None, limi
 
     soldlistings = []
     for item in data.get("itemSummaries", []):
-        price_info = item.get("priceInfo", {})
-        current_price = price_info.get("currentPrice", {})
-        if isinstance(current_price, dict):
-            price_val = current_price.get("value")
+        price_obj = item.get("price", {})
+        if isinstance(price_obj, dict):
+            price_val = price_obj.get("value")
         else:
             price_val = item.get("price")
 
@@ -103,7 +102,9 @@ def fetch_sold_listings(card_name, year=None, card_set=None, language=None, limi
                 soldlistings.append(
                     {
                         "price": float(price_val),
-                        "date": item.get("endDate", item.get("location", "")),
+                        "date": item.get(
+                            "itemCreationDate", item.get("itemOriginDate", "")
+                        ),
                     }
                 )
             except (ValueError, TypeError):
