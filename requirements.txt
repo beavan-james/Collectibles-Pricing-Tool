@@ -5,3 +5,8 @@ python-dotenv
 matplotlib
 numpy
 cachetools
+pydantic-settings
+jinja2
+slowapi
+redis
+aioredis

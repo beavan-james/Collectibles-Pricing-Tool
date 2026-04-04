@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokemon Card Price Comparator</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Pokemon Card Price Comparator</h1>
+            <p class="subtitle">Find market prices for Pokemon cards</p>
+        </header>
+
+        <main>
+            <form id="searchForm" class="search-form">
+                <div class="form-group">
+                    <label for="cardName">Card Name</label>
+                    <input type="text" id="cardName" name="card_name" placeholder="e.g., Charizard" required>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="year">Year</label>
+                        <input type="number" id="year" name="year" placeholder="e.g., 1999">
+                    </div>
+                    <div class="form-group">
+                        <label for="cardSet">Set</label>
+                        <input type="text" id="cardSet" name="card_set" placeholder="e.g., Base Set">
+                    </div>
+                    <div class="form-group">
+                        <label for="language">Language</label>
+                        <input type="text" id="language" name="language" placeholder="e.g., English">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="limit">Number of Listings</label>
+                    <select id="limit" name="limit">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+
+                <button type="submit">Search</button>
+            </form>
+
+            <div id="results" class="results hidden">
+                <section id="priceSection" class="result-section">
+                    <h2>Market Price</h2>
+                    <div id="priceResult" class="price-display"></div>
+                </section>
+
+                <section id="statsSection" class="result-section">
+                    <h2>Card Statistics</h2>
+                    <div id="statsResult" class="stats-grid"></div>
+                </section>
+
+                <section id="listingsSection" class="result-section">
+                    <h2>Recent Sold Listings</h2>
+                    <div id="listingsResult" class="listings-table"></div>
+                </section>
+
+                <section id="chartSection" class="result-section">
+                    <h2>Price History Chart</h2>
+                    <img id="chartResult" class="chart-image" alt="Price chart">
+                </section>
+            </div>
+
+            <div id="error" class="error hidden"></div>
+            <div id="loading" class="loading hidden">Loading...</div>
+        </main>
+
+        <footer>
+            <p>API Documentation: <a href="/docs">/docs</a> | <a href="/redoc">/redoc</a></p>
+        </footer>
+    </div>
+
+    <script>
+        document.getElementById('searchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const params = new URLSearchParams();
+            
+            for (const [key, value] of formData) {
+                if (value) params.append(key, value);
+            }
+
+            document.getElementById('loading').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+            document.getElementById('error').classList.add('hidden');
+
+            try {
+                const cardName = params.get('card_name');
+                
+                const [priceRes, statsRes, listingsRes] = await Promise.all([
+                    fetch(`/PricingService?${params}`),
+                    fetch(`/CardInformationService?${params}`),
+                    fetch(`/pastsoldlisting?${params}`)
+                ]);
+
+                if (!priceRes.ok || !statsRes.ok) {
+                    throw new Error('Card not found');
+                }
+
+                const priceData = await priceRes.json();
+                const statsData = await statsRes.json();
+                const listingsData = await listingsRes.json();
+
+                document.getElementById('priceResult').innerHTML = `
+                    <div class="price-value">${priceData.price}</div>
+                    <div class="price-label">Market Value</div>
+                `;
+
+                document.getElementById('statsResult').innerHTML = `
+                    <div class="stat-item"><span class="stat-label">Min</span><span class="stat-value">$${statsData.min.toFixed(2)}</span></div>
+                    <div class="stat-item"><span class="stat-label">Max</span><span class="stat-value">$${statsData.max.toFixed(2)}</span></div>
+                    <div class="stat-item"><span class="stat-label">Mean</span><span class="stat-value">$${statsData.mean.toFixed(2)}</span></div>
+                    <div class="stat-item"><span class="stat-label">Trend</span><span class="stat-value">${statsData.trend}</span></div>
+                `;
+
+                const tableRows = listingsData.listings.map(l => `
+                    <tr><td>$${l.price.toFixed(2)}</td><td>${l.date || 'N/A'}</td></tr>
+                `).join('');
+                document.getElementById('listingsResult').innerHTML = `
+                    <table><thead><tr><th>Price</th><th>Date</th></tr></thead><tbody>${tableRows}</tbody></table>
+                `;
+
+                document.getElementById('chartResult').src = `/pricechart?card_name=${encodeURIComponent(cardName)}&limit=${params.get('limit')}`;
+
+                document.getElementById('results').classList.remove('hidden');
+            } catch (err) {
+                document.getElementById('error').textContent = err.message || 'Error fetching data';
+                document.getElementById('error').classList.remove('hidden');
+            } finally {
+                document.getElementById('loading').classList.add('hidden');
+            }
+        });
+    </script>
+</body>
+</html>

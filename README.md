@@ -12,6 +12,12 @@ A lightweight FastAPI service that pulls real-time sold listing data from eBay t
 - **Price chart** — generates a scatter plot (PNG) of sold price vs. date with a trend line
 - **Flexible search** — filter by card name, year, set, and language
 - **Best Offer filtering** — automatically skips listings where the actual sold price is unknown
+- **Pagination** — paginated results for large datasets
+- **Historical data** — query pricing trends over configurable time ranges (1-365 days)
+- **Rate limiting** — protects API from abuse (100 req/min default)
+- **Redis caching** — optional distributed cache for multi-instance deployments
+- **Web UI** — user-friendly interface at `/`
+- **Docker support** — one-command deployment with Redis
 
 ## Quick Start
 
@@ -29,11 +35,20 @@ pip install -r requirements.txt
 
 Create a `.env` file in the project root:
 
-```
-EBAY_APP_ID=your_ebay_app_id_here
+```bash
+# eBay OAuth credentials
+EBAY_CLIENT_ID=your_client_id
+EBAY_CLIENT_SECRET=your_client_secret
+EBAY_MARKETPLACE=EBAY_US
+
+# Optional: Redis for distributed caching
+REDIS_URL=redis://localhost:6379
+
+# Optional: Rate limit (default: 100/minute)
+APP_RATE_LIMIT=100/minute
 ```
 
-> You can get an eBay App ID by registering at the [eBay Developer Program](https://developer.ebay.com/).
+> Get eBay OAuth credentials by registering at the [eBay Developer Program](https://developer.ebay.com/).
 
 ### 3. Run the server
 
@@ -41,7 +56,15 @@ EBAY_APP_ID=your_ebay_app_id_here
 uvicorn app.main:app --reload
 ```
 
-The API will be available at `http://127.0.0.1:8000`. Interactive docs are at [`/docs`](http://127.0.0.1:8000/docs).
+The API will be available at `http://127.0.0.1:8000`. Interactive docs are at [`/docs`](http://127.0.0.1:8000/docs). Web UI is at [`http://127.0.0.1:8000/`](http://127.0.0.1:8000/).
+
+### Docker Deployment
+
+```bash
+docker-compose up -d
+```
+
+This starts both the API and Redis containers.
 
 ## API Endpoints
 
@@ -80,7 +103,13 @@ curl "http://127.0.0.1:8000/CardInformationService?card_name=Pikachu&card_set=Ba
 
 ### `GET /pastsoldlisting`
 
-Returns raw sold listing data (price + date).
+Returns paginated raw sold listing data (price + date).
+
+| Parameter   | Type    | Default | Description                              |
+|------------|---------|---------|------------------------------------------|
+| `card_name`| string  | *required* | Card name to search for              |
+| `limit`    | int     | `25`    | Results per page                         |
+| `offset`   | int     | `0`     | Pagination offset                        |
 
 ```bash
 curl "http://127.0.0.1:8000/pastsoldlisting?card_name=Mewtwo&language=Japanese&limit=5"
@@ -91,7 +120,35 @@ curl "http://127.0.0.1:8000/pastsoldlisting?card_name=Mewtwo&language=Japanese&l
   "listings": [
     { "price": 12.5, "date": "2026-02-15T08:30:00.000Z" },
     { "price": 9.99, "date": "2026-02-10T14:22:00.000Z" }
-  ]
+  ],
+  "pagination": {
+    "total": 50,
+    "limit": 5,
+    "offset": 0,
+    "has_more": true
+  }
+}
+```
+
+### `GET /historical`
+
+Returns historical pricing data over a configurable time range.
+
+| Parameter   | Type    | Default | Description                              |
+|------------|---------|---------|------------------------------------------|
+| `card_name`| string  | *required* | Card name to search for              |
+| `days`     | int     | `90`    | Days of historical data (1-365)         |
+
+```bash
+curl "http://127.0.0.1:8000/historical?card_name=Charizard&days=30"
+```
+
+```json
+{
+  "card_name": "charizard",
+  "listings": [...],
+  "days_range": 30,
+  "avg_price": 45.67
 }
 ```
 
@@ -103,21 +160,45 @@ Returns a **PNG scatter plot** of sold price vs. date with a trend line. Open di
 http://127.0.0.1:8000/pricechart?card_name=Charizard&limit=50
 ```
 
+### `GET /health`
+
+Health check endpoint for monitoring and load balancers.
+
+```json
+{ "status": "ok", "app": "Pokemon Card Price Comparator", "redis": true }
+```
+
+### `GET /metrics`
+
+Returns internal metrics about eBay API usage and caching.
+
+```json
+{
+  "ebay_api_calls": 150,
+  "cache_hits": 450,
+  "cache_misses": 100,
+  "redis_status": "connected"
+}
+```
+
 ## Project Structure
 
 ```
 PokemonCompCalculator/
-├── .env                        # eBay API credentials (git-ignored)
-├── requirements.txt
+├── .env                        # Environment variables (git-ignored)
+├── requirements.txt            # Python dependencies
+├── Dockerfile                   # Single-container deployment
+├── docker-compose.yml          # Multi-container deployment (API + Redis)
 ├── README.md
 └── app/
     ├── main.py                 # FastAPI app & endpoint definitions
     ├── models/
     │   └── price.py            # Response formatting
     └── services/
-        ├── ebay.py             # eBay Finding API integration
+        ├── ebay.py             # eBay Browse API integration
         ├── pricing.py          # Market price calculation
-        └── cardinfo.py         # Statistics & chart generation
+        ├── cardinfo.py         # Statistics & chart generation
+        └── redis_cache.py      # Redis caching utilities
 ```
 
 ## How Pricing Works
@@ -133,8 +214,10 @@ PokemonCompCalculator/
 ## Tech Stack
 
 - **[FastAPI](https://fastapi.tiangolo.com/)** — API framework
-- ~~**[eBay Finding API](https://developer.ebay.com/devzone/finding/Concepts/MakingACall.html)** — sold listing data~~ (Decommissioned in 2025)
-- **[eBay Product Summary Search API](https://developer.ebay.com/api-docs/buy/catalog/resources/product_summary/methods/search)** — product details (e.g. language)
+- **[eBay Browse API](https://developer.ebay.com/api-docs/buy/browse/overview.html)** — sold listing data
 - **[Matplotlib](https://matplotlib.org/)** — chart generation
 - **[NumPy](https://numpy.org/)** — trend line calculation
-- **[python-dotenv](https://github.com/theskumar/python-dotenv)** — environment variable management
+- **[Redis](https://redis.io/)** — distributed caching (optional)
+- **[slowapi](https://github.com/laurentS/slowapi)** — rate limiting
+- **[Docker](https://www.docker.com/)** — containerization
+- **[pydantic-settings](https://github.com/pydantic/pydantic-settings)** — environment config
